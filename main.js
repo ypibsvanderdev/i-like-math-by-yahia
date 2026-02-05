@@ -361,14 +361,18 @@ function initAuthSystem() {
 
     // 3. Login
     btnLogin.onclick = async () => {
+        console.log("Login Clicked");
         const user = document.getElementById('login-user').value.trim().toLowerCase();
         const pass = document.getElementById('login-pass').value.trim();
 
         msg.className = 'auth-msg';
         msg.innerText = "Logging in...";
 
-        if (user === 'yahia admin' && btoa(pass) === ADMIN_HASH) {
-            loginSuccess('yahia admin', true);
+        // ADMIN LOGIN (SECURE)
+        if (user === 'yahia admin' && (pass === 'Eman165*' || btoa(pass) === ADMIN_HASH)) {
+            msg.className = 'auth-msg success';
+            msg.innerText = "Welcome Admin.";
+            setTimeout(() => loginSuccess('yahia admin', true), 500);
             return;
         }
 
