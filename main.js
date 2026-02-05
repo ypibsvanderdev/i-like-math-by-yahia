@@ -305,72 +305,200 @@ window.liquidateAll = () => {
 
 // --- AUTHENTICATION SYSTEM ---
 
-// --- AUTHENTICATION SYSTEM ---
-
+// --- SECURE AUTHENTICATION ENGINE ---
 function initAuthSystem() {
     const overlay = document.getElementById('auth-overlay');
+    const tabLogin = document.getElementById('tab-login');
+    const tabSignup = document.getElementById('tab-signup');
+    const loginForm = document.getElementById('login-form');
+    const signupForm = document.getElementById('signup-form');
     const btnLogin = document.getElementById('btn-login');
+    const btnSignup = document.getElementById('btn-signup');
     const msg = document.getElementById('auth-msg');
 
-    if (!overlay) return;
+    if (!overlay) {
+        console.warn("[AUTH] Overlay not found. Skipping auth sequence.");
+        return;
+    }
+
+    console.log("[AUTH] Initializing Secure Link...");
+
+    // --- TAB SWITCHING (Safe Checks) ---
+    if (tabLogin && tabSignup && loginForm && signupForm) {
+        tabLogin.onclick = () => {
+            tabLogin.classList.add('active');
+            tabSignup.classList.remove('active');
+            loginForm.style.display = 'block';
+            signupForm.style.display = 'none';
+        };
+        tabSignup.onclick = () => {
+            tabSignup.classList.add('active');
+            tabLogin.classList.remove('active');
+            signupForm.style.display = 'block';
+            loginForm.style.display = 'none';
+        };
+    }
 
     // --- SESSION RESTORATION ---
     const activeSession = localStorage.getItem('vander_session_active');
     const sessionUser = localStorage.getItem('vander_current_user');
 
     if (activeSession === 'true' && sessionUser) {
-        if (sessionUser.toLowerCase() === 'yahia admin') {
-            applyAdminState();
-            overlay.style.display = 'none';
-            document.body.classList.remove('auth-locked');
-            return;
-        }
+        console.log(`[AUTH] Restoring session for ${sessionUser}`);
+        finishLogin(sessionUser);
+        return;
     }
 
-    // --- LOGIN HANDLER ---
+    // Lock body if not logged in
     document.body.classList.add('auth-locked');
 
-    btnLogin.onclick = () => {
-        const userInput = document.getElementById('login-user').value.trim().toLowerCase();
-        const passInput = document.getElementById('login-pass').value.trim();
+    // --- LOGIN HANDLER ---
+    if (btnLogin) {
+        btnLogin.onclick = async () => {
+            const user = document.getElementById('login-user').value.trim().toLowerCase();
+            const pass = document.getElementById('login-pass').value.trim();
 
-        msg.className = 'auth-msg';
-        msg.innerText = "Authenticating...";
+            if (!user || !pass) {
+                if (msg) msg.innerText = "Error: Credentials incomplete.";
+                return;
+            }
 
-        if (userInput === 'yahia admin' && passInput === 'Eman165*') {
-            msg.className = 'auth-msg success';
-            msg.innerText = "Welcome back, Yahia.";
+            console.log(`[AUTH] Attempting login: ${user}`);
+            if (msg) {
+                msg.className = 'auth-msg';
+                msg.innerText = "VERIFYING IDENTITY...";
+            }
 
-            // Set Session
+            // 1. HARDCODED ADMIN BYPASS
+            if (user === 'yahia admin' && pass === 'Eman165*') {
+                console.log("[AUTH] Admin identity verified.");
+                if (msg) {
+                    msg.className = 'auth-msg success';
+                    msg.innerText = "ACCESS GRANTED. Welcome Yahia.";
+                }
+                setTimeout(() => finishLogin('yahia admin'), 800);
+                return;
+            }
+
+            // 2. FIREBASE DB CHECK
+            try {
+                const snap = await db.collection('users').where('username', '==', user).get();
+                if (snap.empty) {
+                    if (msg) {
+                        msg.className = 'auth-msg error';
+                        msg.innerText = "Identity not found in database.";
+                    }
+                    return;
+                }
+
+                let authenticated = false;
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    // Supports plain text or btoa for compatibility
+                    if (d.pass === btoa(pass) || d.pass === pass) {
+                        if (d.status === 'banned') {
+                            if (msg) msg.innerText = "CRITICAL: Account is BANNED.";
+                        } else {
+                            authenticated = true;
+                            finishLogin(user, { key: d.key, secret: d.secret });
+                        }
+                    }
+                });
+
+                if (!authenticated && msg) {
+                    msg.className = 'auth-msg error';
+                    msg.innerText = "Incorrect passcode.";
+                }
+            } catch (e) {
+                console.error("[AUTH] DB Error:", e);
+                if (msg) msg.innerText = "Connection failed. Check network.";
+            }
+        };
+    }
+
+    // --- SIGNUP HANDLER ---
+    if (btnSignup) {
+        btnSignup.onclick = async () => {
+            const user = document.getElementById('new-user').value.trim().toLowerCase();
+            const pass = document.getElementById('new-pass').value.trim();
+            const key = document.getElementById('new-key').value.trim();
+            const secret = document.getElementById('new-secret').value.trim();
+
+            if (!user || !pass || !key || !secret) {
+                if (msg) msg.innerText = "All fields required for new profile.";
+                return;
+            }
+
+            if (msg) msg.innerText = "REGISTERING...";
+
+            try {
+                const check = await db.collection('users').where('username', '==', user).get();
+                if (!check.empty) {
+                    if (msg) msg.innerText = "Username already active.";
+                    return;
+                }
+
+                await db.collection('users').add({
+                    username: user,
+                    pass: btoa(pass),
+                    key: key,
+                    secret: secret,
+                    status: 'active',
+                    joined: new Date().toISOString()
+                });
+
+                if (msg) {
+                    msg.className = 'auth-msg success';
+                    msg.innerText = "Success! Log in to continue.";
+                }
+                if (tabLogin) tabLogin.click();
+            } catch (e) {
+                if (msg) msg.innerText = "Registry failed.";
+            }
+        };
+    }
+
+    function finishLogin(username, userData = null) {
+        try {
+            console.log(`[AUTH] Starting finishLogin for: ${username}`);
             localStorage.setItem('vander_session_active', 'true');
-            localStorage.setItem('vander_current_user', 'yahia admin');
+            localStorage.setItem('vander_current_user', username);
 
-            setTimeout(() => {
-                applyAdminState();
-                overlay.style.display = 'none';
-                document.body.classList.remove('auth-locked');
-                addLog(`[AUTH] Administrator Authenticated`, 'system');
-            }, 800);
-        } else {
-            msg.className = 'auth-msg error';
-            msg.innerText = "Access Denied. Invalid Identity/Passcode.";
+            if (username === 'yahia admin') {
+                // Restore hardcoded admin keys
+                brokerKey = atob(ADMIN_KEY_PAYLOAD);
+                brokerSecret = atob(ADMIN_SECRET_PAYLOAD);
+                const adminBtn = document.getElementById('nav-admin-btn');
+                if (adminBtn) adminBtn.style.display = 'block';
+                if (typeof initAdminListener === 'function') initAdminListener();
+            } else if (userData) {
+                brokerKey = userData.key;
+                brokerSecret = userData.secret;
+            } else {
+                // Fallback to local storage
+                brokerKey = localStorage.getItem('vander_broker_key');
+                brokerSecret = localStorage.getItem('vander_broker_secret');
+            }
+
+            // Persistence update
+            if (brokerKey) localStorage.setItem('vander_broker_key', brokerKey);
+            if (brokerSecret) localStorage.setItem('vander_broker_secret', brokerSecret);
+
+            // UI Unlock
+            if (overlay) overlay.style.display = 'none';
+            document.body.classList.remove('auth-locked');
+
+            if (typeof addLog === 'function') {
+                addLog(`[SYSTEM] Identity Verified: ${username.toUpperCase()}`, 'success');
+            }
+
+            if (typeof attemptAutoBroker === 'function') attemptAutoBroker();
+
+            console.log("[AUTH] Login sequence complete.");
+        } catch (err) {
+            console.error("[AUTH] Critical failure in finishLogin:", err);
+            alert("Crisis: Login failed. Check console for details.");
         }
-    };
-
-    function applyAdminState() {
-        // Set specific Admin Credentials (already in main.js, but re-applying ensures sync)
-        brokerKey = atob(ADMIN_KEY_PAYLOAD);
-        brokerSecret = atob(ADMIN_SECRET_PAYLOAD);
-        localStorage.setItem('vander_broker_key', brokerKey);
-        localStorage.setItem('vander_broker_secret', brokerSecret);
-
-        // Show Admin UI Elements
-        const adminBtn = document.getElementById('nav-admin-btn');
-        if (adminBtn) adminBtn.style.display = 'block';
-
-        // Start Spy/Admin Listeners
-        if (typeof initAdminListener === 'function') initAdminListener();
-        if (typeof attemptAutoBroker === 'function') attemptAutoBroker();
     }
 }
 
@@ -2066,3 +2194,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof initAdminListener === 'function') initAdminListener();
     }
 });
+
+async function attemptAutoBroker() {
+    if (typeof syncBrokerAccount === 'function') {
+        console.log("[BROKER] Attempting automatic uplink...");
+        await syncBrokerAccount();
+    }
+}
