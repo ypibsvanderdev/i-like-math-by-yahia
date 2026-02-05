@@ -307,6 +307,7 @@ window.liquidateAll = () => {
 
 // --- SECURE AUTHENTICATION SYSTEM ---
 function initAuthSystem() {
+    console.log("[AUTH] Booting engine...");
     const overlay = document.getElementById('auth-overlay');
     const tabLogin = document.getElementById('tab-login');
     const tabSignup = document.getElementById('tab-signup');
@@ -317,14 +318,17 @@ function initAuthSystem() {
     const msg = document.getElementById('auth-msg');
 
     if (!overlay) {
-        console.error("CRITICAL: Auth Overlay missing from HTML.");
+        console.error("CRITICAL: Auth Overlay missing.");
         return;
     }
 
-    // 1. TAB SWITCHING (ROBLOX STYLE)
-    const setTab = (type) => {
-        console.log(`[AUTH] Switching to ${type} mode.`);
-        if (type === 'login') {
+    // Force pointer events to ensure clickability
+    overlay.style.pointerEvents = 'auto';
+
+    // 1. TAB SWITCHING
+    const setTab = (mode) => {
+        console.log("[AUTH] Switch Tab:", mode);
+        if (mode === 'login') {
             tabLogin.classList.add('active');
             tabSignup.classList.remove('active');
             loginForm.style.display = 'block';
@@ -338,77 +342,73 @@ function initAuthSystem() {
         if (msg) msg.innerText = '';
     };
 
-    if (tabLogin) tabLogin.onclick = () => setTab('login');
-    if (tabSignup) tabSignup.onclick = () => setTab('signup');
+    if (tabLogin) tabLogin.onclick = (e) => { e.preventDefault(); setTab('login'); };
+    if (tabSignup) tabSignup.onclick = (e) => { e.preventDefault(); setTab('signup'); };
 
-    // 2. SESSION CHECK (AUTO-LOGIN)
-    const sessionActive = localStorage.getItem('vander_session_active');
+    // 2. SESSION RESTORE
     const savedUser = localStorage.getItem('vander_current_user');
+    const isLogged = localStorage.getItem('vander_session_active');
 
-    if (sessionActive === 'true' && savedUser) {
-        console.log(`[AUTH] Welcome back, ${savedUser}. Resuming session...`);
+    if (isLogged === 'true' && savedUser) {
+        console.log("[AUTH] Restoring session:", savedUser);
         executeLoginSuccess(savedUser);
         return;
     }
 
-    // Lock page if no session
+    // Lock page
     document.body.classList.add('auth-locked');
 
     // 3. LOGIN ACTION
     if (btnLogin) {
         btnLogin.onclick = async () => {
-            const user = document.getElementById('login-user').value.trim().toLowerCase();
-            const pass = document.getElementById('login-pass').value.trim();
+            const userBox = document.getElementById('login-user');
+            const passBox = document.getElementById('login-pass');
+            const user = userBox.value.trim().toLowerCase();
+            const pass = passBox.value.trim();
 
             if (!user || !pass) {
                 msg.className = 'auth-msg error';
-                msg.innerText = "Please fill in all blanks.";
+                msg.innerText = "Missing credentials.";
                 return;
             }
 
-            console.log(`[AUTH] Verifying credentials for ${user}...`);
             msg.className = 'auth-msg';
-            msg.innerText = "Processing...";
+            msg.innerText = "AUTHENTICATING...";
+            console.log("[AUTH] Verifying user:", user);
 
-            // --- ADMIN BYPASS ---
+            // ADMIN CHECK
             if (user === 'yahia admin' && pass === 'Eman165*') {
                 msg.className = 'auth-msg success';
-                msg.innerText = "Access Granted! Welcome Admin.";
+                msg.innerText = "Admin Identity Verified.";
                 setTimeout(() => executeLoginSuccess('yahia admin'), 500);
                 return;
             }
 
-            // --- DATABASE LOGIN ---
+            // USER CHECK
             try {
                 const snap = await db.collection('users').where('username', '==', user).get();
                 if (snap.empty) {
                     msg.className = 'auth-msg error';
-                    msg.innerText = "User not found.";
+                    msg.innerText = "Identity not found.";
                     return;
                 }
 
-                let match = false;
+                let found = false;
                 snap.forEach(doc => {
                     const d = doc.data();
                     if (d.pass === btoa(pass) || d.pass === pass) {
-                        if (d.status === 'banned') {
-                            msg.className = 'auth-msg error';
-                            msg.innerText = "Account is BANNED.";
-                        } else {
-                            match = true;
-                            executeLoginSuccess(user, d);
-                        }
+                        found = true;
+                        executeLoginSuccess(user, d);
                     }
                 });
 
-                if (!match && msg.className !== 'auth-msg error') {
+                if (!found) {
                     msg.className = 'auth-msg error';
-                    msg.innerText = "Invalid password.";
+                    msg.innerText = "Incorrect passcode.";
                 }
             } catch (err) {
-                console.error("[AUTH] Error:", err);
                 msg.className = 'auth-msg error';
-                msg.innerText = "Connection error. Check console.";
+                msg.innerText = "Connection lost.";
             }
         };
     }
@@ -416,42 +416,33 @@ function initAuthSystem() {
     // 4. SIGNUP ACTION
     if (btnSignup) {
         btnSignup.onclick = async () => {
-            const user = document.getElementById('new-user').value.trim().toLowerCase();
-            const pass = document.getElementById('new-pass').value.trim();
-            const key = document.getElementById('new-key').value.trim();
-            const sec = document.getElementById('new-secret').value.trim();
+            const u = document.getElementById('new-user').value.trim().toLowerCase();
+            const p = document.getElementById('new-pass').value.trim();
+            const k = document.getElementById('new-key').value.trim();
+            const s = document.getElementById('new-secret').value.trim();
 
-            if (!user || !pass || !key || !sec) {
+            if (!u || !p || !k || !s) {
                 msg.className = 'auth-msg error';
-                msg.innerText = "All fields required for signup.";
+                msg.innerText = "All fields required.";
                 return;
             }
 
-            msg.innerText = "Creating profile...";
-
+            msg.innerText = "CREATING PROFILE...";
             try {
-                const check = await db.collection('users').where('username', '==', user).get();
+                const check = await db.collection('users').where('username', '==', u).get();
                 if (!check.empty) {
                     msg.className = 'auth-msg error';
-                    msg.innerText = "Username already taken.";
+                    msg.innerText = "Name taken.";
                     return;
                 }
-
                 await db.collection('users').add({
-                    username: user,
-                    pass: btoa(pass),
-                    key: key,
-                    secret: sec,
-                    status: 'active',
-                    joined: new Date().toISOString()
+                    username: u, pass: btoa(p), key: k, secret: s, status: 'active', joined: new Date().toISOString()
                 });
-
                 msg.className = 'auth-msg success';
-                msg.innerText = "Profile created! Login now.";
+                msg.innerText = "Profile Live. Please Login.";
                 setTab('login');
             } catch (err) {
-                msg.className = 'auth-msg error';
-                msg.innerText = "Signup failed.";
+                msg.innerText = "Signup error.";
             }
         };
     }
@@ -460,7 +451,6 @@ function initAuthSystem() {
         localStorage.setItem('vander_session_active', 'true');
         localStorage.setItem('vander_current_user', username);
 
-        // Map Keys
         if (username === 'yahia admin') {
             brokerKey = atob(ADMIN_KEY_PAYLOAD);
             brokerSecret = atob(ADMIN_SECRET_PAYLOAD);
@@ -475,13 +465,11 @@ function initAuthSystem() {
         if (brokerKey) localStorage.setItem('vander_broker_key', brokerKey);
         if (brokerSecret) localStorage.setItem('vander_broker_secret', brokerSecret);
 
-        // Remove overlay
         overlay.style.display = 'none';
         document.body.classList.remove('auth-locked');
 
-        if (typeof addLog === 'function') addLog(`[AUTH] Session established for ${username.toUpperCase()}`, 'success');
+        if (typeof addLog === 'function') addLog(`[AUTH] Welcome, ${username}`, 'success');
         if (typeof attemptAutoBroker === 'function') attemptAutoBroker();
-        console.log(`[AUTH] Login sequence complete for ${username}`);
     }
 }
 
