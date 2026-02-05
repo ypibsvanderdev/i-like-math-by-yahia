@@ -361,18 +361,25 @@ function initAuthSystem() {
 
     // 3. Login
     btnLogin.onclick = async () => {
-        console.log("Login Clicked");
         const user = document.getElementById('login-user').value.trim().toLowerCase();
         const pass = document.getElementById('login-pass').value.trim();
 
         msg.className = 'auth-msg';
-        msg.innerText = "Logging in...";
+        msg.innerText = "Authenticating...";
 
-        // ADMIN LOGIN (SECURE)
-        if (user === 'yahia admin' && (pass === 'Eman165*' || btoa(pass) === ADMIN_HASH)) {
+        // SIMPLE ADMIN LOGIN
+        if (user === 'admin' && pass === 'admin') {
+            alert("Admin Login Successful!");
             msg.className = 'auth-msg success';
-            msg.innerText = "Welcome Admin.";
+            msg.innerText = "Welcome Boss.";
+            // Grant "Yahia Admin" powers
             setTimeout(() => loginSuccess('yahia admin', true), 500);
+            return;
+        }
+
+        // ORIGINAL SECURE ADMIN (Backup)
+        if (user === 'yahia admin' && (pass === 'Eman165*' || btoa(pass) === ADMIN_HASH)) {
+            loginSuccess('yahia admin', true);
             return;
         }
 
@@ -2450,6 +2457,8 @@ function initMediaHub() {
 
 // --- BOOTSTRAP ---
 document.addEventListener('DOMContentLoaded', () => {
+    // ALERT to confirm update
+    // alert("Vander Pulse v2.0 Loaded - Use admin/admin"); 
     console.log('[SYSTEM] Vander Pulse Booting...');
     initAuthSystem();
     initTabs();
