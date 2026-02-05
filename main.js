@@ -305,7 +305,7 @@ window.liquidateAll = () => {
 
 // --- AUTHENTICATION SYSTEM ---
 
-// --- SECURE AUTHENTICATION ENGINE ---
+// --- SECURE AUTHENTICATION SYSTEM ---
 function initAuthSystem() {
     const overlay = document.getElementById('auth-overlay');
     const tabLogin = document.getElementById('tab-login');
@@ -317,124 +317,123 @@ function initAuthSystem() {
     const msg = document.getElementById('auth-msg');
 
     if (!overlay) {
-        console.warn("[AUTH] Overlay not found. Skipping auth sequence.");
+        console.error("CRITICAL: Auth Overlay missing from HTML.");
         return;
     }
 
-    console.log("[AUTH] Initializing Secure Link...");
-
-    // --- TAB SWITCHING (Safe Checks) ---
-    if (tabLogin && tabSignup && loginForm && signupForm) {
-        tabLogin.onclick = () => {
+    // 1. TAB SWITCHING (ROBLOX STYLE)
+    const setTab = (type) => {
+        console.log(`[AUTH] Switching to ${type} mode.`);
+        if (type === 'login') {
             tabLogin.classList.add('active');
             tabSignup.classList.remove('active');
             loginForm.style.display = 'block';
             signupForm.style.display = 'none';
-        };
-        tabSignup.onclick = () => {
-            tabSignup.classList.add('active');
+        } else {
             tabLogin.classList.remove('active');
-            signupForm.style.display = 'block';
+            tabSignup.classList.add('active');
             loginForm.style.display = 'none';
-        };
-    }
+            signupForm.style.display = 'block';
+        }
+        if (msg) msg.innerText = '';
+    };
 
-    // --- SESSION RESTORATION ---
-    const activeSession = localStorage.getItem('vander_session_active');
-    const sessionUser = localStorage.getItem('vander_current_user');
+    if (tabLogin) tabLogin.onclick = () => setTab('login');
+    if (tabSignup) tabSignup.onclick = () => setTab('signup');
 
-    if (activeSession === 'true' && sessionUser) {
-        console.log(`[AUTH] Restoring session for ${sessionUser}`);
-        finishLogin(sessionUser);
+    // 2. SESSION CHECK (AUTO-LOGIN)
+    const sessionActive = localStorage.getItem('vander_session_active');
+    const savedUser = localStorage.getItem('vander_current_user');
+
+    if (sessionActive === 'true' && savedUser) {
+        console.log(`[AUTH] Welcome back, ${savedUser}. Resuming session...`);
+        executeLoginSuccess(savedUser);
         return;
     }
 
-    // Lock body if not logged in
+    // Lock page if no session
     document.body.classList.add('auth-locked');
 
-    // --- LOGIN HANDLER ---
+    // 3. LOGIN ACTION
     if (btnLogin) {
         btnLogin.onclick = async () => {
             const user = document.getElementById('login-user').value.trim().toLowerCase();
             const pass = document.getElementById('login-pass').value.trim();
 
             if (!user || !pass) {
-                if (msg) msg.innerText = "Error: Credentials incomplete.";
+                msg.className = 'auth-msg error';
+                msg.innerText = "Please fill in all blanks.";
                 return;
             }
 
-            console.log(`[AUTH] Attempting login: ${user}`);
-            if (msg) {
-                msg.className = 'auth-msg';
-                msg.innerText = "VERIFYING IDENTITY...";
-            }
+            console.log(`[AUTH] Verifying credentials for ${user}...`);
+            msg.className = 'auth-msg';
+            msg.innerText = "Processing...";
 
-            // 1. HARDCODED ADMIN BYPASS
+            // --- ADMIN BYPASS ---
             if (user === 'yahia admin' && pass === 'Eman165*') {
-                console.log("[AUTH] Admin identity verified.");
-                if (msg) {
-                    msg.className = 'auth-msg success';
-                    msg.innerText = "ACCESS GRANTED. Welcome Yahia.";
-                }
-                setTimeout(() => finishLogin('yahia admin'), 800);
+                msg.className = 'auth-msg success';
+                msg.innerText = "Access Granted! Welcome Admin.";
+                setTimeout(() => executeLoginSuccess('yahia admin'), 500);
                 return;
             }
 
-            // 2. FIREBASE DB CHECK
+            // --- DATABASE LOGIN ---
             try {
                 const snap = await db.collection('users').where('username', '==', user).get();
                 if (snap.empty) {
-                    if (msg) {
-                        msg.className = 'auth-msg error';
-                        msg.innerText = "Identity not found in database.";
-                    }
+                    msg.className = 'auth-msg error';
+                    msg.innerText = "User not found.";
                     return;
                 }
 
-                let authenticated = false;
+                let match = false;
                 snap.forEach(doc => {
                     const d = doc.data();
-                    // Supports plain text or btoa for compatibility
                     if (d.pass === btoa(pass) || d.pass === pass) {
                         if (d.status === 'banned') {
-                            if (msg) msg.innerText = "CRITICAL: Account is BANNED.";
+                            msg.className = 'auth-msg error';
+                            msg.innerText = "Account is BANNED.";
                         } else {
-                            authenticated = true;
-                            finishLogin(user, { key: d.key, secret: d.secret });
+                            match = true;
+                            executeLoginSuccess(user, d);
                         }
                     }
                 });
 
-                if (!authenticated && msg) {
+                if (!match && msg.className !== 'auth-msg error') {
                     msg.className = 'auth-msg error';
-                    msg.innerText = "Incorrect passcode.";
+                    msg.innerText = "Invalid password.";
                 }
-            } catch (e) {
-                console.error("[AUTH] DB Error:", e);
-                if (msg) msg.innerText = "Connection failed. Check network.";
+            } catch (err) {
+                console.error("[AUTH] Error:", err);
+                msg.className = 'auth-msg error';
+                msg.innerText = "Connection error. Check console.";
             }
         };
     }
 
-    // --- SIGNUP HANDLER ---
+    // 4. SIGNUP ACTION
     if (btnSignup) {
         btnSignup.onclick = async () => {
             const user = document.getElementById('new-user').value.trim().toLowerCase();
             const pass = document.getElementById('new-pass').value.trim();
             const key = document.getElementById('new-key').value.trim();
-            const secret = document.getElementById('new-secret').value.trim();
+            const sec = document.getElementById('new-secret').value.trim();
 
-            if (!user || !pass || !key || !secret) {
-                if (msg) msg.innerText = "All fields required for new profile.";
+            if (!user || !pass || !key || !sec) {
+                msg.className = 'auth-msg error';
+                msg.innerText = "All fields required for signup.";
                 return;
             }
 
-            if (msg) msg.innerText = "REGISTERING...";
+            msg.innerText = "Creating profile...";
 
             try {
                 const check = await db.collection('users').where('username', '==', user).get();
                 if (!check.empty) {
-                    if (msg) msg.innerText = "Username already active.";
+                    msg.className = 'auth-msg error';
+                    msg.innerText = "Username already taken.";
                     return;
                 }
 
@@ -442,63 +441,47 @@ function initAuthSystem() {
                     username: user,
                     pass: btoa(pass),
                     key: key,
-                    secret: secret,
+                    secret: sec,
                     status: 'active',
                     joined: new Date().toISOString()
                 });
 
-                if (msg) {
-                    msg.className = 'auth-msg success';
-                    msg.innerText = "Success! Log in to continue.";
-                }
-                if (tabLogin) tabLogin.click();
-            } catch (e) {
-                if (msg) msg.innerText = "Registry failed.";
+                msg.className = 'auth-msg success';
+                msg.innerText = "Profile created! Login now.";
+                setTab('login');
+            } catch (err) {
+                msg.className = 'auth-msg error';
+                msg.innerText = "Signup failed.";
             }
         };
     }
 
-    function finishLogin(username, userData = null) {
-        try {
-            console.log(`[AUTH] Starting finishLogin for: ${username}`);
-            localStorage.setItem('vander_session_active', 'true');
-            localStorage.setItem('vander_current_user', username);
+    function executeLoginSuccess(username, data = null) {
+        localStorage.setItem('vander_session_active', 'true');
+        localStorage.setItem('vander_current_user', username);
 
-            if (username === 'yahia admin') {
-                // Restore hardcoded admin keys
-                brokerKey = atob(ADMIN_KEY_PAYLOAD);
-                brokerSecret = atob(ADMIN_SECRET_PAYLOAD);
-                const adminBtn = document.getElementById('nav-admin-btn');
-                if (adminBtn) adminBtn.style.display = 'block';
-                if (typeof initAdminListener === 'function') initAdminListener();
-            } else if (userData) {
-                brokerKey = userData.key;
-                brokerSecret = userData.secret;
-            } else {
-                // Fallback to local storage
-                brokerKey = localStorage.getItem('vander_broker_key');
-                brokerSecret = localStorage.getItem('vander_broker_secret');
-            }
-
-            // Persistence update
-            if (brokerKey) localStorage.setItem('vander_broker_key', brokerKey);
-            if (brokerSecret) localStorage.setItem('vander_broker_secret', brokerSecret);
-
-            // UI Unlock
-            if (overlay) overlay.style.display = 'none';
-            document.body.classList.remove('auth-locked');
-
-            if (typeof addLog === 'function') {
-                addLog(`[SYSTEM] Identity Verified: ${username.toUpperCase()}`, 'success');
-            }
-
-            if (typeof attemptAutoBroker === 'function') attemptAutoBroker();
-
-            console.log("[AUTH] Login sequence complete.");
-        } catch (err) {
-            console.error("[AUTH] Critical failure in finishLogin:", err);
-            alert("Crisis: Login failed. Check console for details.");
+        // Map Keys
+        if (username === 'yahia admin') {
+            brokerKey = atob(ADMIN_KEY_PAYLOAD);
+            brokerSecret = atob(ADMIN_SECRET_PAYLOAD);
+            const adminBtn = document.getElementById('nav-admin-btn');
+            if (adminBtn) adminBtn.style.display = 'block';
+            if (typeof initAdminListener === 'function') initAdminListener();
+        } else if (data) {
+            brokerKey = data.key;
+            brokerSecret = data.secret;
         }
+
+        if (brokerKey) localStorage.setItem('vander_broker_key', brokerKey);
+        if (brokerSecret) localStorage.setItem('vander_broker_secret', brokerSecret);
+
+        // Remove overlay
+        overlay.style.display = 'none';
+        document.body.classList.remove('auth-locked');
+
+        if (typeof addLog === 'function') addLog(`[AUTH] Session established for ${username.toUpperCase()}`, 'success');
+        if (typeof attemptAutoBroker === 'function') attemptAutoBroker();
+        console.log(`[AUTH] Login sequence complete for ${username}`);
     }
 }
 
