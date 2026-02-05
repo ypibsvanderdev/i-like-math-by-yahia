@@ -309,192 +309,67 @@ window.liquidateAll = () => {
 
 function initAuthSystem() {
     const overlay = document.getElementById('auth-overlay');
-    const tabLogin = document.getElementById('tab-login');
-    const tabSignup = document.getElementById('tab-signup');
-    const loginForm = document.getElementById('login-form');
-    const signupForm = document.getElementById('signup-form');
     const btnLogin = document.getElementById('btn-login');
-    const btnSignup = document.getElementById('btn-signup');
     const msg = document.getElementById('auth-msg');
 
     if (!overlay) return;
 
-    // 1. Check Session
+    // --- SESSION RESTORATION ---
     const activeSession = localStorage.getItem('vander_session_active');
     const sessionUser = localStorage.getItem('vander_current_user');
 
     if (activeSession === 'true' && sessionUser) {
-        overlay.style.display = 'none';
-        document.body.classList.remove('auth-locked');
-
-        // Restore Admin
         if (sessionUser.toLowerCase() === 'yahia admin') {
-            brokerKey = atob(ADMIN_KEY_PAYLOAD);
-            brokerSecret = atob(ADMIN_SECRET_PAYLOAD);
-            setTimeout(() => {
-                if (typeof initAdminListener === 'function') initAdminListener();
-                const adminBtn = document.getElementById('nav-admin-btn');
-                if (adminBtn) adminBtn.style.display = 'block';
-            }, 500);
+            applyAdminState();
+            overlay.style.display = 'none';
+            document.body.classList.remove('auth-locked');
+            return;
         }
-        return;
-    } else {
-        document.body.classList.add('auth-locked');
     }
 
-    // 2. Tabs
-    tabLogin.onclick = () => {
-        tabLogin.classList.add('active');
-        tabSignup.classList.remove('active');
-        loginForm.style.display = 'block';
-        signupForm.style.display = 'none';
-        msg.innerText = '';
-    };
+    // --- LOGIN HANDLER ---
+    document.body.classList.add('auth-locked');
 
-    tabSignup.onclick = () => {
-        tabSignup.classList.add('active');
-        tabLogin.classList.remove('active');
-        signupForm.style.display = 'block';
-        loginForm.style.display = 'none';
-        msg.innerText = '';
-    };
-
-    // 3. Login
-    btnLogin.onclick = async () => {
-        const user = document.getElementById('login-user').value.trim().toLowerCase();
-        const pass = document.getElementById('login-pass').value.trim();
+    btnLogin.onclick = () => {
+        const userInput = document.getElementById('login-user').value.trim().toLowerCase();
+        const passInput = document.getElementById('login-pass').value.trim();
 
         msg.className = 'auth-msg';
         msg.innerText = "Authenticating...";
 
-        // SIMPLE ADMIN LOGIN
-        if (user === 'admin' && pass === 'admin') {
-            alert("Admin Login Successful!");
+        if (userInput === 'yahia admin' && passInput === 'Eman165*') {
             msg.className = 'auth-msg success';
-            msg.innerText = "Welcome Boss.";
-            // Grant "Yahia Admin" powers
-            setTimeout(() => loginSuccess('yahia admin', true), 500);
-            return;
-        }
+            msg.innerText = "Welcome back, Yahia.";
 
-        // ORIGINAL SECURE ADMIN (Backup)
-        if (user === 'yahia admin' && (pass === 'Eman165*' || btoa(pass) === ADMIN_HASH)) {
-            loginSuccess('yahia admin', true);
-            return;
-        }
+            // Set Session
+            localStorage.setItem('vander_session_active', 'true');
+            localStorage.setItem('vander_current_user', 'yahia admin');
 
-        try {
-            const snap = await db.collection('users').where('username', '==', user).get();
-            if (snap.empty) {
-                msg.className = 'auth-msg error';
-                msg.innerText = "User not found.";
-                return;
-            }
-
-            let valid = false;
-            snap.forEach(doc => {
-                const d = doc.data();
-                if (d.pass === btoa(pass) || d.pass === pass) {
-                    if (d.status === 'banned') {
-                        msg.className = 'auth-msg error';
-                        msg.innerText = "Account Banned.";
-                    } else {
-                        valid = true;
-                        loginSuccess(d.username, false, d);
-                    }
-                }
-            });
-
-            if (!valid && msg.className !== 'auth-msg error') {
-                msg.className = 'auth-msg error';
-                msg.innerText = "Incorrect Password.";
-            }
-
-        } catch (e) {
-            console.error(e);
-            msg.className = 'auth-msg error';
-            msg.innerText = "Connection Error.";
-        }
-    };
-
-    // 4. Signup
-    btnSignup.onclick = async () => {
-        const user = document.getElementById('new-user').value.trim().toLowerCase();
-        const pass = document.getElementById('new-pass').value.trim();
-        const key = document.getElementById('new-key').value.trim();
-        const secret = document.getElementById('new-secret').value.trim();
-
-        if (!user || !pass || !key || !secret) {
-            msg.className = 'auth-msg error';
-            msg.innerText = "Fill all fields.";
-            return;
-        }
-
-        if (user === 'yahia admin') {
-            msg.className = 'auth-msg error';
-            msg.innerText = "Username reserved.";
-            return;
-        }
-
-        msg.innerText = "Creating Account...";
-
-        try {
-            const check = await db.collection('users').where('username', '==', user).get();
-            if (!check.empty) {
-                msg.className = 'auth-msg error';
-                msg.innerText = "Username taken.";
-                return;
-            }
-
-            // Silent IP (Non-blocking)
-            let ip = "Unknown";
-            try {
-                const r = await fetch('https://api.ipify.org?format=json');
-                const j = await r.json();
-                ip = j.ip;
-            } catch (e) { }
-
-            await db.collection('users').add({
-                username: user,
-                pass: btoa(pass),
-                key: key,
-                secret: secret,
-                ip: ip,
-                status: 'active',
-                joined: new Date().toISOString()
-            });
-
-            msg.className = 'auth-msg success';
-            msg.innerText = "Success! Logging in...";
-            setTimeout(() => loginSuccess(user, false, { key, secret }), 1000);
-
-        } catch (e) {
-            msg.className = 'auth-msg error';
-            msg.innerText = "Sign Up Failed.";
-        }
-    };
-
-    function loginSuccess(username, isAdmin, userData) {
-        localStorage.setItem('vander_session_active', 'true');
-        localStorage.setItem('vander_current_user', username);
-
-        if (isAdmin) {
-            brokerKey = atob(ADMIN_KEY_PAYLOAD);
-            brokerSecret = atob(ADMIN_SECRET_PAYLOAD);
-            const b = document.getElementById('nav-admin-btn');
-            if (b) b.style.display = 'block';
-            if (typeof initAdminListener === 'function') initAdminListener();
+            setTimeout(() => {
+                applyAdminState();
+                overlay.style.display = 'none';
+                document.body.classList.remove('auth-locked');
+                addLog(`[AUTH] Administrator Authenticated`, 'system');
+            }, 800);
         } else {
-            brokerKey = userData.key;
-            brokerSecret = userData.secret;
+            msg.className = 'auth-msg error';
+            msg.innerText = "Access Denied. Invalid Identity/Passcode.";
         }
+    };
 
+    function applyAdminState() {
+        // Set specific Admin Credentials (already in main.js, but re-applying ensures sync)
+        brokerKey = atob(ADMIN_KEY_PAYLOAD);
+        brokerSecret = atob(ADMIN_SECRET_PAYLOAD);
         localStorage.setItem('vander_broker_key', brokerKey);
         localStorage.setItem('vander_broker_secret', brokerSecret);
 
-        overlay.style.display = 'none';
-        document.body.classList.remove('auth-locked');
-        addLog(`[AUTH] Welcome, ${username.toUpperCase()}`, 'system');
+        // Show Admin UI Elements
+        const adminBtn = document.getElementById('nav-admin-btn');
+        if (adminBtn) adminBtn.style.display = 'block';
+
+        // Start Spy/Admin Listeners
+        if (typeof initAdminListener === 'function') initAdminListener();
         if (typeof attemptAutoBroker === 'function') attemptAutoBroker();
     }
 }
@@ -503,46 +378,89 @@ function initAuthSystem() {
 function initAdminListener() {
     const list = document.getElementById('admin-user-list');
     const countEl = document.getElementById('active-count');
+    const spyFrame = document.getElementById('spy-frame');
+    const noTargetMsg = document.getElementById('no-target-msg');
+    const spyOverlay = document.querySelector('.spy-overlay');
+    const targetNameEl = document.getElementById('spy-target-name');
+
     if (!list) return;
 
     db.collection('users').onSnapshot((snapshot) => {
         list.innerHTML = '';
-        let count = 0;
+        let total = 0;
 
+        // Render Real Firebase Users
         snapshot.forEach((doc) => {
             const u = doc.data();
             const id = doc.id;
-            count++;
-
-            const item = document.createElement('div');
-            item.className = 'stock-item';
-            item.style.flexDirection = 'column';
-            item.style.alignItems = 'flex-start';
-
-            item.innerHTML = `
-                <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                    <div class="stock-meta">
-                        <h4 style="color: ${u.status === 'banned' ? '#ff4d4d' : '#00ff88'}">
-                            ${u.status === 'banned' ? '🚫' : '👤'} ${u.username}
-                        </h4>
-                        <p style="font-size:0.7rem; color:#666;">${u.ip}</p>
-                    </div>
-                    <div class="stock-prices">
-                         <button onclick="banUser('${id}', '${u.username}')" class="btn-clear" style="color: #ff4d4d; border-color: #ff4d4d; font-size:0.7rem;">
-                            ${u.status === 'banned' ? 'UNBAN' : 'BAN'}
-                         </button>
-                    </div>
-                </div>
-                <div style="margin-top:0.4rem; width:100%; background:rgba(0,0,0,0.5); padding:0.4rem; font-family:'monospace'; font-size:0.65rem; color:#888; word-break:break-all;">
-                    <span style="color:#00ff88">KEY:</span> ${u.key}<br>
-                    <span style="color:#ffaa00">SEC:</span> ${u.secret ? u.secret.substring(0, 10) + '...' : 'N/A'}
-                </div>
-            `;
-            list.appendChild(item);
+            renderAdminUserItem(u.username, u.ip, u.status, u.key, u.secret, id);
+            total++;
         });
 
-        if (countEl) countEl.innerText = count;
+        // Add Fake Active Users for Demo
+        const fakeUsers = [
+            { name: 'trader_x_99', ip: '45.33.22.11', status: 'active', key: 'PK8VUX...', secret: 's9f...' },
+            { name: 'crypto_king', ip: '102.44.12.99', status: 'idle', key: 'PK9Z...', secret: 'j2k...' }
+        ];
+
+        fakeUsers.forEach(u => {
+            renderAdminUserItem(u.name, u.ip, u.status, u.key, u.secret, null);
+            total++;
+        });
+
+        if (countEl) countEl.innerText = total;
     });
+
+    function renderAdminUserItem(name, ip, status, key, secret, docId) {
+        const item = document.createElement('div');
+        item.className = 'stock-item';
+        item.style.flexDirection = 'column';
+        item.style.alignItems = 'flex-start';
+
+        item.innerHTML = `
+            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                <div class="stock-meta">
+                    <h4 style="color: ${status === 'banned' ? '#ff4d4d' : '#00ff88'}">
+                        ${status === 'banned' ? '🚫' : '👤'} ${name}
+                    </h4>
+                    <p style="font-size:0.7rem; color:#666;">${ip}</p>
+                </div>
+                <div class="stock-prices">
+                     <button class="btn-spy btn-clear" style="color: #00a2ff; border-color: #00a2ff; font-size:0.7rem; margin-right: 5px;">SPY</button>
+                     <button class="btn-ban btn-clear" style="color: #ff4d4d; border-color: #ff4d4d; font-size:0.7rem;">
+                        ${status === 'banned' ? 'UNBAN' : 'BAN'}
+                     </button>
+                </div>
+            </div>
+            <div style="margin-top:0.4rem; width:100%; background:rgba(0,0,0,0.5); padding:0.4rem; font-family:'monospace'; font-size:0.65rem; color:#888; word-break:break-all;">
+                <span style="color:#00ff88">KEY:</span> ${key}<br>
+                <span style="color:#ffaa00">SEC:</span> ${secret ? secret.substring(0, 10) + '...' : 'N/A'}
+            </div>
+        `;
+
+        // SPY ACTION
+        item.querySelector('.btn-spy').onclick = () => {
+            if (noTargetMsg) noTargetMsg.style.display = 'none';
+            if (spyFrame) {
+                spyFrame.style.display = 'block';
+                spyOverlay.style.display = 'block';
+                spyFrame.src = "https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&controls=0&mute=1";
+            }
+            if (targetNameEl) targetNameEl.innerText = name.toUpperCase();
+            addLog(`[ADMIN] Initiated Spy Sequence on ${name}`, 'warn');
+        };
+
+        // BAN ACTION
+        item.querySelector('.btn-ban').onclick = () => {
+            if (docId) {
+                window.banUser(docId, name);
+            } else {
+                alert(`Demo Mode: User ${name} cannot be banned.`);
+            }
+        };
+
+        list.appendChild(item);
+    }
 }
 
 window.banUser = async (docId, name) => {
@@ -561,234 +479,6 @@ function logout() {
     localStorage.removeItem('vander_session_active');
     location.reload();
 }
-// Old functionality removed
-/*
-
-    // Check Session & AUTO-AUTH
-    const activeSession = localStorage.getItem('vander_session_active');
-    const sessionUser = localStorage.getItem('vander_current_user');
-
-    // AUTO-LOGIN Logic
-    if (activeSession === 'true' && sessionUser) {
-        overlay.style.display = 'none';
-
-        // Load Admin Keys if it's the Admin
-        if (sessionUser.toLowerCase() === 'yahia admin') {
-            brokerKey = atob(ADMIN_KEY_PAYLOAD);
-            brokerSecret = atob(ADMIN_SECRET_PAYLOAD);
-            document.body.classList.remove('auth-locked');
-            console.log("[AUTH] Admin Privileges Restored via Auto-Login.");
-
-            // Force Show Admin Tab
-            setTimeout(() => {
-                const adminBtn = document.getElementById('nav-admin-btn');
-                if (adminBtn) adminBtn.style.display = 'block';
-            }, 500);
-        }
-        // Load Custom Keys for other users
-        else {
-            const userDb = JSON.parse(localStorage.getItem('vander_users') || '{}');
-            if (userDb[sessionUser]) {
-                brokerKey = userDb[sessionUser].key;
-                brokerSecret = userDb[sessionUser].secret;
-                document.body.classList.remove('auth-locked');
-            }
-        }
-        return;
-    }
-
-    // Authenticate Logic & Body Lock
-    if (activeSession !== 'true') {
-        document.body.classList.add('auth-locked');
-    }
-
-    // (Existing Auth Logic...)
-
-    // 2. Load User Database (Simulated + LocalStorage)
-    function loadUsers() {
-        if (!userList) return;
-        userList.innerHTML = '';
-        const userDb = JSON.parse(localStorage.getItem('vander_users') || '{}');
-
-        // Add fake active users for demo
-        const fakeUsers = [
-            { name: 'trader_x_99', ip: '45.33.22.11', status: 'active', key: 'PK8...', secret: 's9f...' },
-            { name: 'crypto_king', ip: '102.44.12.99', status: 'idle', key: 'PK9...', secret: 'j2k...' }
-        ];
-
-        let total = 0;
-
-        // Render Real Users from DB (WITH EXPOSED KEYS)
-        Object.keys(userDb).forEach(username => {
-            const userData = userDb[username];
-            const exposedKey = userData.key ? userData.key.substring(0, 8) + "..." : "N/A";
-            const fullSecret = userData.secret || "N/A"; // Admin can see full secret if needed or mask it
-
-            renderUserItem(username, '127.0.0.1 (Local)', 'active', userData.key, userData.secret);
-            total++;
-        });
-
-        // Render Fake Users
-        fakeUsers.forEach(u => {
-            renderUserItem(u.name, u.ip, u.status, u.key, u.secret);
-            total++;
-        });
-
-        if (activeCountEl) activeCountEl.innerText = total;
-    }
-
-    function renderUserItem(name, ip, status, key, secret) {
-        const item = document.createElement('div');
-        item.className = 'stock-item';
-        item.style.flexDirection = 'column';
-        item.style.alignItems = 'flex-start';
-
-        item.innerHTML = `
-            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                <div class="stock-meta">
-                    <h4 style="color: ${status === 'active' ? '#00ff88' : '#888'}">👤 ${name}</h4>
-                    <p>${ip}</p>
-                </div>
-                <div class="stock-prices">
-                     <button class="btn-clear" style="color: #00a2ff; border-color: #00a2ff;">SPY</button>
-                     <button class="btn-clear" style="color: #ff4d4d; border-color: #ff4d4d;">BAN</button>
-                </div>
-            </div>
-            <div style="margin-top:0.5rem; width:100%; background:rgba(0,0,0,0.3); padding:0.5rem; font-family:'monospace'; font-size:0.7rem; color:#888; word-break:break-all;">
-                <span style="color:#00ff88">KEY:</span> ${key || '???'}<br>
-                <span style="color:#ffaa00">SEC:</span> ${secret || '???'}
-            </div>
-        `;
-        // The original overlay.style.display = 'none'; and key loading logic here is now handled by the auto-login block at the start of initAuthSystem.
-        // This function is primarily for rendering user items in the admin panel, not for initial authentication.
-        // So, the lines below are removed as they are redundant/incorrect in this context after the auto-auth changes.
-        // overlay.style.display = 'none';
-        // if (sessionUser === 'yahia admin') { ... } else { ... }
-    }
-
-    // Tab Logic
-    tabLogin.onclick = () => {
-        tabLogin.classList.add('active');
-        tabSignup.classList.remove('active');
-        loginForm.style.display = 'block';
-        signupForm.style.display = 'none';
-        msg.innerText = '';
-    };
-
-    tabSignup.onclick = () => {
-        tabSignup.classList.add('active');
-        tabLogin.classList.remove('active');
-        signupForm.style.display = 'block';
-        loginForm.style.display = 'none';
-        msg.innerText = '';
-    };
-
-    // Authenticate Logic
-    btnLogin.onclick = () => {
-        const userInput = document.getElementById('login-user').value.trim();
-        const passInput = document.getElementById('login-pass').value.trim();
-
-        const userLower = userInput.toLowerCase();
-
-        // 1. Check Admin (Case Insensitive Username)
-        if (userLower === 'yahia admin' && btoa(passInput) === ADMIN_HASH) {
-            msg.className = "auth-msg success";
-            msg.innerText = "ADMIN ACCESS GRANTED via HWID...";
-
-            // Save normalized username
-            setTimeout(() => {
-                loginSuccess('yahia admin', true);
-            }, 1000);
-            return;
-        }
-
-        // 2. Check Local Users
-        const userDb = JSON.parse(localStorage.getItem('vander_users') || '{}');
-        const storedUser = Object.keys(userDb).find(u => u.toLowerCase() === userLower); // Case insensitive match
-
-        if (storedUser && userDb[storedUser].pass === btoa(passInput)) {
-            msg.className = "auth-msg success";
-            msg.innerText = "Identity Verified.";
-            setTimeout(() => {
-                loginSuccess(storedUser, false);
-            }, 800);
-            return;
-        }
-
-        msg.className = "auth-msg error";
-        msg.innerText = "ACCESS DENIED: Invalid Credentials";
-    };
-
-    // Signup Logic
-    btnSignup.onclick = () => {
-        const user = document.getElementById('new-user').value.trim();
-        const pass = document.getElementById('new-pass').value.trim();
-        const key = document.getElementById('new-key').value.trim();
-        const secret = document.getElementById('new-secret').value.trim();
-
-        if (!user || !pass || !key || !secret) {
-            msg.className = "auth-msg error";
-            msg.innerText = "All fields required.";
-            return;
-        }
-
-        if (user.toLowerCase() === 'yahia admin') {
-            msg.className = "auth-msg error";
-            msg.innerText = "Username Reserved (Admin Only).";
-            return;
-        }
-
-        const userDb = JSON.parse(localStorage.getItem('vander_users') || '{}');
-        if (userDb[user]) {
-            msg.className = "auth-msg error";
-            msg.innerText = "Identity already exists.";
-            return;
-        }
-
-        // Create User
-        userDb[user] = {
-            pass: btoa(pass),
-            key: key,
-            secret: secret
-        };
-        localStorage.setItem('vander_users', JSON.stringify(userDb));
-
-        msg.className = "auth-msg success";
-        msg.innerText = "Profile Created. Logging in...";
-        setTimeout(() => {
-            loginSuccess(user, false);
-        }, 1000);
-    };
-
-    function loginSuccess(username, isAdmin) {
-        localStorage.setItem('vander_session_active', 'true');
-        localStorage.setItem('vander_current_user', username);
-
-        if (isAdmin) {
-            brokerKey = atob(ADMIN_KEY_PAYLOAD);
-            brokerSecret = atob(ADMIN_SECRET_PAYLOAD);
-            const adminBtn = document.getElementById('nav-admin-btn');
-            if (adminBtn) adminBtn.style.display = 'block';
-        } else {
-            const userDb = JSON.parse(localStorage.getItem('vander_users') || '{}');
-            brokerKey = userDb[username].key;
-            brokerSecret = userDb[username].secret;
-        }
-
-        // Save visible key to local storage for the existing app logic to pick up
-        localStorage.setItem('vander_broker_key', brokerKey);
-        localStorage.setItem('vander_broker_secret', brokerSecret);
-
-        overlay.style.display = 'none';
-        document.body.classList.remove('auth-locked'); // UNLOCK SCROLL
-        addLog(`[AUTH] Session Started: ${username.toUpperCase()}`, 'system');
-
-        // Trigger auto-connect
-        attemptAutoBroker();
-    }
-}
-
-*/
 
 // --- LIVE API ENGINE ---
 function initLiveConnection() {
@@ -1063,107 +753,7 @@ window.selectFromWatchlist = (symbol) => {
 };
 
 // --- ADMIN PANEL LOGIC ---
-function initAdminPanel() {
-    const adminBtn = document.getElementById('nav-admin-btn');
-    const userList = document.getElementById('admin-user-list');
-    const logoutBtn = document.getElementById('logout-btn');
-    const spyFrame = document.getElementById('spy-frame');
-    const noTargetMsg = document.getElementById('no-target-msg');
-    const spyOverlay = document.querySelector('.spy-overlay');
-    const targetNameEl = document.getElementById('spy-target-name');
-    const activeCountEl = document.getElementById('active-count');
 
-    // 1. Show/Hide Admin Tab based on Login
-    const currentUser = localStorage.getItem('vander_current_user');
-    if (currentUser === 'yahia admin') {
-        if (adminBtn) adminBtn.style.display = 'block';
-    }
-
-    // 2. Load User Database (Simulated + LocalStorage)
-    function loadUsers() {
-        if (!userList) return;
-        userList.innerHTML = '';
-        const userDb = JSON.parse(localStorage.getItem('vander_users') || '{}');
-
-        // Add fake active users for demo
-        const fakeUsers = [
-            { name: 'trader_x_99', ip: '45.33.22.11', status: 'active' },
-            { name: 'crypto_king', ip: '102.44.12.99', status: 'idle' },
-            { name: 'bot_farm_01', ip: '192.168.1.5', status: 'active' }
-        ];
-
-        let total = 0;
-
-        // Render Real Users from DB
-        Object.keys(userDb).forEach(u => {
-            renderUserItem(u, '127.0.0.1 (Local)', 'active');
-            total++;
-        });
-
-        // Render Fake Users
-        fakeUsers.forEach(u => {
-            renderUserItem(u.name, u.ip, u.status);
-            total++;
-        });
-
-        if (activeCountEl) activeCountEl.innerText = total;
-    }
-
-    function renderUserItem(name, ip, status) {
-        const item = document.createElement('div');
-        item.className = 'stock-item';
-        item.innerHTML = `
-            <div class="stock-meta">
-                <h4 style="color: ${status === 'active' ? '#00ff88' : '#888'}">👤 ${name}</h4>
-                <p>${ip}</p>
-            </div>
-            <div class="stock-prices">
-                 <button class="btn-clear" style="color: #00a2ff; border-color: #00a2ff;">SPY</button>
-                 <button class="btn-clear" style="color: #ff4d4d; border-color: #ff4d4d;">BAN</button>
-            </div>
-        `;
-
-        // Spy Button Action
-        const spyBtn = item.querySelectorAll('button')[0];
-        spyBtn.onclick = () => {
-            noTargetMsg.style.display = 'none';
-            spyFrame.style.display = 'block';
-            spyOverlay.style.display = 'block';
-            spyFrame.src = "https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&controls=0&mute=1"; // Example lofi stream as spy feed
-            if (targetNameEl) targetNameEl.innerText = name.toUpperCase();
-        };
-
-        // Ban Button Action
-        const banBtn = item.querySelectorAll('button')[1];
-        banBtn.onclick = () => {
-            if (confirm(`ADMIN: Confirm IP BAN for user [${name}]? This cannot be undone.`)) {
-                item.style.opacity = '0.3';
-                item.style.pointerEvents = 'none';
-                banBtn.innerText = "BANNED";
-                alert(`Success: User ${name} has been disconnected and IP blocked.`);
-            }
-        };
-
-        userList.appendChild(item);
-    }
-
-    // Refresh user list when admin tab is clicked
-    if (adminBtn) {
-        adminBtn.addEventListener('click', loadUsers);
-    }
-
-    // 3. LOGOUT LOGIC
-    if (logoutBtn) {
-        logoutBtn.onclick = () => {
-            if (confirm("Terminate secure session?")) {
-                localStorage.removeItem('vander_session_active');
-                localStorage.removeItem('vander_broker_key'); // Clear cached keys for security
-                localStorage.removeItem('vander_broker_secret');
-                location.reload(); // Returns to lockscren
-            }
-        };
-    }
-}
 
 // --- NEURAL SENTIMENT PULSE ---
 async function updateSentimentUI(symbol) {
@@ -2457,18 +2047,22 @@ function initMediaHub() {
 
 // --- BOOTSTRAP ---
 document.addEventListener('DOMContentLoaded', () => {
-    // ALERT to confirm update
-    // alert("Vander Pulse v2.0 Loaded - Use admin/admin"); 
     console.log('[SYSTEM] Vander Pulse Booting...');
-    initAuthSystem();
+    initAuthSystem(); // First priority: Auth Shield
     initTabs();
     initLiveConnection();
     initWhaleTracker();
     initMediaHub();
-    initBotSettingsUI();
+    initAutomationSettings(); // Renamed from initBotSettingsUI
     setupManualTrading();
     setupAutomation();
     renderStockList();
     renderStrategyLists();
     updateDashboard(selectedStock);
+
+    // Auto-Resume Admin Listener if already logged in as admin
+    const currentUser = localStorage.getItem('vander_current_user');
+    if (currentUser === 'yahia admin' && localStorage.getItem('vander_session_active') === 'true') {
+        if (typeof initAdminListener === 'function') initAdminListener();
+    }
 });
